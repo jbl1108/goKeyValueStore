@@ -7,6 +7,6 @@ type KeyValue struct {
 
 // Message a struct
 type Message struct {
-	Topic string `json:"topic"`
-	Data  any    `json:"data"`
+	Topic string   `json:"topic"`
+	Data  KeyValue `json:"data"`
 }

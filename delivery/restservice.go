@@ -5,15 +5,16 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/jbl1108/goKeyValueStorage/usecases/datamodel"
 	"github.com/jbl1108/goKeyValueStorage/usecases/ports/input"
 )
 
 type KeyValueRestService struct {
-	keyValueHandlingUsecase input.KeyValSyncInputPort
+	keyValueHandlingUsecase input.KeyValInputPort
 	address                 string
 }
 
-func NewKeyValueRestService(address string, keyValueHandlingUsecase input.KeyValSyncInputPort) *KeyValueRestService {
+func NewKeyValueRestService(address string, keyValueHandlingUsecase input.KeyValInputPort) *KeyValueRestService {
 	return &KeyValueRestService{keyValueHandlingUsecase: keyValueHandlingUsecase, address: address}
 }
 
@@ -25,7 +26,7 @@ func (s *KeyValueRestService) Start() error {
 }
 
 func (s *KeyValueRestService) handleGetKey(w http.ResponseWriter, r *http.Request) {
-	result, err := s.keyValueHandlingUsecase.GetKey(r.PathValue("key"))
+	result, err := s.keyValueHandlingUsecase.GetKey(r.PathValue("topic") + ":" + r.PathValue("key"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -42,13 +43,19 @@ func (s *KeyValueRestService) handleSetKey(w http.ResponseWriter, r *http.Reques
 	}
 	defer r.Body.Close()
 	log.Printf("Url %v", r.URL)
-	key := r.PathValue("key")
-	if key == "" {
-		http.Error(w, "Missing key", http.StatusBadRequest)
+	if r.PathValue("topic") == "" || r.PathValue("key") == "" {
+		http.Error(w, "Missing topic or key in URL", http.StatusBadRequest)
 		return
 	}
 
-	err = s.keyValueHandlingUsecase.SetKey(key, body)
+	message := datamodel.Message{
+		Topic: r.PathValue("topic"),
+		Data: datamodel.KeyValue{
+			Key:   r.PathValue("key"),
+			Value: string(body),
+		},
+	}
+	err = s.keyValueHandlingUsecase.SetKey(message)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -61,12 +68,12 @@ func (s *KeyValueRestService) RegisterRoutes(mux *http.ServeMux) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Welcome to the KeyValue REST Service"))
 		w.Write([]byte("Use one of the following endpoints"))
-		w.Write([]byte("\nGET /key/{key} - Retrieve a key value by key"))
-		w.Write([]byte("\nPOST /key/{key} - Set a key value by key"))
+		w.Write([]byte("\nGET /key/{topic}/{key} - Retrieve a key value by key"))
+		w.Write([]byte("\nPOST /key/{topic}/{key} - Set a key value by key"))
 		w.Write([]byte("\n/health/ - Health check endpoint"))
 	})
-	mux.HandleFunc("GET /key/{key}", s.handleGetKey)
-	mux.HandleFunc("POST /key/{key}", s.handleSetKey)
+	mux.HandleFunc("GET /key/{topic}/{key}", s.handleGetKey)
+	mux.HandleFunc("POST /key/{topic}/{key}", s.handleSetKey)
 	mux.HandleFunc("/health/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

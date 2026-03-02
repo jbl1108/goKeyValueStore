@@ -2,7 +2,9 @@ package delivery
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
+	"strings"
 
 	"github.com/jbl1108/goKeyValueStorage/usecases/datamodel"
 	"github.com/jbl1108/goKeyValueStorage/usecases/ports/input"
@@ -13,10 +15,10 @@ import (
 type MQTTClient struct {
 	client       mqtt.Client
 	topic        string
-	inputUsecase input.KeyValASyncInputPort
+	inputUsecase input.KeyValInputPort
 }
 
-func NewMQTTClient(broker string, username string, password string, topic string, inputUsecase input.KeyValASyncInputPort) *MQTTClient {
+func NewMQTTClient(broker string, username string, password string, topic string, inputUsecase input.KeyValInputPort) *MQTTClient {
 	opts := mqtt.NewClientOptions().AddBroker(broker)
 	opts.SetUsername(username)
 	opts.SetPassword(password)
@@ -52,9 +54,26 @@ func (m *MQTTClient) messageHandler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	log.Printf("Received message: %+v", message)
-	message.Topic = msg.Topic() // Override topic with the actual MQTT topic
-	err := m.inputUsecase.HandleKeyValueMessage(message)
+	prefix, err := m.getTopic(msg.Topic())
+	if err != nil {
+		log.Printf("Error getting prefix: %v", err)
+		return
+	}
+	message.Topic = prefix
+	err = m.inputUsecase.SetKey(message)
 	if err != nil {
 		log.Printf("Error handling key value: %v", err)
 	}
+
+}
+func (*MQTTClient) getTopic(topic string) (string, error) {
+	parts := strings.Split(topic, "/")
+	if len(parts) < 2 {
+		return "", errors.New("Invalid topic format, expected 'keyvalue/{bucket}' got: " + topic)
+	}
+	if parts[0] != "keyvalue" {
+		return "", errors.New("Invalid topic format, expected 'keyvalue/{bucket}' got: " + topic)
+	}
+	prefix := parts[1]
+	return prefix, nil
 }
